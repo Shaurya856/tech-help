@@ -1,0 +1,7 @@
+build/
+*.exe
+*.obj
+*.pdb
+install/config.json
+*.local.json
+last_seen_state.json

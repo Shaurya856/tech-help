@@ -1,0 +1,23 @@
+{
+  "gmail": {
+    "address": "example@gmail.com",
+    "imap_host": "imap.gmail.com",
+    "imap_port": 993,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 465,
+    "app_password": "REPLACE_ME"
+  },
+  "granted_folders": [
+    "C:/Users/REPLACE_ME/Desktop",
+    "C:/Users/REPLACE_ME/Downloads",
+    "C:/Users/REPLACE_ME/Documents"
+  ],
+  "output_folder": "C:/Users/REPLACE_ME/Documents/Processed",
+  "pdf_compression_threshold_mb": 5,
+  "obsidian_vault_folder": "C:/Users/REPLACE_ME/Documents/Obsidian Vault",
+  "llm_provider": {
+    "name": "groq",
+    "api_key": "REPLACE_ME"
+  },
+  "language": "en"
+}
