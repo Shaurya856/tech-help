@@ -17,9 +17,9 @@ struct GmailConfig {
 struct Config {
     GmailConfig gmail;
     std::string output_folder;
-    std::int64_t pdf_compression_threshold_mb = 5;
     std::string obsidian_vault_folder;
     std::string language = "en";
+    std::string printer_name;
 };
 
 // Throws std::runtime_error if the file is missing or malformed.

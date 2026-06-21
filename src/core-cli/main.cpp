@@ -2,11 +2,10 @@
 // MCP server) can invoke the real conversion logic via subprocess instead of
 // re-implementing it.
 //
-// Usage: core-cli <input_path> [compression_threshold_mb]
+// Usage: core-cli <input_path>
 // Prints a single JSON object to stdout: {"status": "...", "output_path": "..."}
 // status is one of "ok", "unsupported", "error".
 
-#include <cstdint>
 #include <iostream>
 
 #include "process_file.h"
@@ -38,17 +37,13 @@ std::string json_escape(const std::string& s) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: core-cli <input_path> [compression_threshold_mb]\n";
+        std::cerr << "usage: core-cli <input_path>\n";
         return 1;
     }
 
     const std::string input_path = argv[1];
-    std::int64_t threshold_mb = core::kDefaultCompressionThresholdMB;
-    if (argc >= 3) {
-        threshold_mb = std::stoll(argv[2]);
-    }
 
-    core::ProcessResult result = core::process_file(input_path, threshold_mb);
+    core::ProcessResult result = core::process_file(input_path);
 
     std::cout << "{\"status\": \"" << status_to_string(result.status)
                << "\", \"output_path\": \"" << json_escape(result.output_path) << "\"}\n";

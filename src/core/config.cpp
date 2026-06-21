@@ -27,10 +27,9 @@ Config load_config(const std::string& config_path) {
         config.gmail.app_password = g.value("app_password", "");
     }
     config.output_folder = j.value("output_folder", "");
-    config.pdf_compression_threshold_mb =
-        j.value("pdf_compression_threshold_mb", static_cast<std::int64_t>(5));
     config.obsidian_vault_folder = j.value("obsidian_vault_folder", "");
     config.language = j.value("language", "en");
+    config.printer_name = j.value("printer_name", "");
 
     return config;
 }

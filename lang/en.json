@@ -21,5 +21,9 @@
   "email.reply_unsupported_subject": "Can't process this file type",
   "email.reply_unsupported_body": "Sorry, this file type isn't supported. Try sending a photo, image, or PDF.",
   "email.reply_error_subject": "Something went wrong",
-  "email.reply_error_body": "Sorry, something went wrong processing this file. Please try sending it again."
+  "email.reply_error_body": "Sorry, something went wrong processing this file. Please try sending it again.",
+  "email.reply_printed_subject": "Printed!",
+  "email.reply_printed_body": "Printed! Your file has been sent to the printer, and is attached here as well.",
+  "email.reply_print_failed_subject": "Couldn't print your file",
+  "email.reply_print_failed_body": "Sorry, we couldn't print your file. Here's the converted PDF instead so you can print it yourself."
 }

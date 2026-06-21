@@ -16,14 +16,10 @@ struct ProcessResult {
     std::string output_path;
 };
 
-constexpr std::int64_t kDefaultCompressionThresholdMB = 5;
-
 // Detects the input file type and routes it: images (jpg/jpeg/png) are
-// converted to PDF, PDFs are passed through and compressed in place if over
-// compression_threshold_mb. DOCX and other unsupported types return
+// converted to PDF, PDFs are passed through. The resulting PDF is always
+// compressed in place. DOCX and other unsupported types return
 // ProcessStatus::UnsupportedType.
-ProcessResult process_file(
-    const std::string& input_path,
-    std::int64_t compression_threshold_mb = kDefaultCompressionThresholdMB);
+ProcessResult process_file(const std::string& input_path);
 
 }  // namespace core

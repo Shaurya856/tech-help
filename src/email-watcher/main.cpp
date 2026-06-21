@@ -8,11 +8,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <vector>
 
 #include "config.h"
 #include "imap_client.h"
 #include "mime.h"
+#include "print_job.h"
 #include "process_file.h"
 #include "smtp_client.h"
 #include "state.h"
@@ -34,6 +36,11 @@ std::vector<std::uint8_t> read_file(const std::string& path) {
 void write_file(const std::string& path, const std::vector<std::uint8_t>& data) {
     std::ofstream out(path, std::ios::binary);
     out.write(reinterpret_cast<const char*>(data.data()), data.size());
+}
+
+bool subject_requests_print(const std::string& subject) {
+    static const std::regex kPrintWord(R"(\bprint\b)", std::regex::icase);
+    return std::regex_search(subject, kPrintWord);
 }
 
 std::string extension_of(const std::string& filename) {
@@ -116,6 +123,8 @@ int main() {
 
             if (parsed.attachments.empty()) continue;
 
+            const bool wants_print = subject_requests_print(parsed.subject);
+
             for (const auto& attachment : parsed.attachments) {
                 std::string ext = extension_of(attachment.filename);
                 std::string tmp_path = (fs::path(tmp_dir) / attachment.filename).string();
@@ -129,14 +138,33 @@ int main() {
                     continue;
                 }
 
-                core::ProcessResult result =
-                    core::process_file(tmp_path, config.pdf_compression_threshold_mb);
+                core::ProcessResult result = core::process_file(tmp_path);
 
                 if (result.status == core::ProcessStatus::Ok) {
                     mime::Attachment reply_attachment;
                     reply_attachment.filename = fs::path(result.output_path).filename().string();
                     reply_attachment.content_type = "application/pdf";
                     reply_attachment.data = read_file(result.output_path);
+
+                    if (wants_print) {
+                        watcher::PrintResult print_result = watcher::print_pdf(
+                            config.printer_name, reply_attachment.filename, reply_attachment.data);
+
+                        if (print_result.success) {
+                            reply_with_text(smtp, config.gmail.address, parsed.from_address,
+                                             strings.get("email.reply_printed_subject"),
+                                             strings.get("email.reply_printed_body"),
+                                             {reply_attachment});
+                        } else {
+                            std::string body = strings.get("email.reply_print_failed_body") +
+                                                "\n\nDetails: " + print_result.error_message;
+                            reply_with_text(smtp, config.gmail.address, parsed.from_address,
+                                             strings.get("email.reply_print_failed_subject"), body,
+                                             {reply_attachment});
+                        }
+                        continue;
+                    }
+
                     reply_with_text(smtp, config.gmail.address, parsed.from_address,
                                      strings.get("email.reply_success_subject"),
                                      strings.get("email.reply_success_body"), {reply_attachment});

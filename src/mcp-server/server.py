@@ -17,11 +17,11 @@ _CORE_CLI_PATH = os.environ.get(
 
 @mcp.tool()
 def process_file(path: str) -> dict:
-    """Convert an image to PDF, or compress an oversized PDF, in place.
-    Returns {status, output_path}. status is 'ok', 'unsupported' (e.g. docx),
-    or 'error'. Always use this instead of computer-use/screen-clicking for
+    """Convert an image to PDF, or compress a PDF, in place. Returns
+    {status, output_path}. status is 'ok', 'unsupported' (e.g. docx), or
+    'error'. Always use this instead of computer-use/screen-clicking for
     conversion or compression requests."""
-    return process_file_via_cli(_CORE_CLI_PATH, path, _config.get("pdf_compression_threshold_mb"))
+    return process_file_via_cli(_CORE_CLI_PATH, path)
 
 
 @mcp.tool()

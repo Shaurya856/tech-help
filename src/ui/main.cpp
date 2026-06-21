@@ -106,8 +106,7 @@ void handle_file(const std::string& input_path) {
         return;
     }
 
-    core::ProcessResult result =
-        core::process_file(input_path, g_config->pdf_compression_threshold_mb);
+    core::ProcessResult result = core::process_file(input_path);
 
     if (result.status == core::ProcessStatus::Ok) {
         g_lastOutputPath = move_to_output_folder(result.output_path);

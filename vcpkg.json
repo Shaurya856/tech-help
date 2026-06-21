@@ -5,6 +5,7 @@
     "libharu",
     "qpdf",
     "nlohmann-json",
-    "curl"
+    "curl",
+    "stb"
   ]
 }
