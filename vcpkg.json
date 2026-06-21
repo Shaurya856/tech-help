@@ -1,0 +1,10 @@
+{
+  "name": "tech-help",
+  "version": "0.1.0",
+  "dependencies": [
+    "libharu",
+    "qpdf",
+    "nlohmann-json",
+    "curl"
+  ]
+}

@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release
@@ -25,6 +25,7 @@ jobs:
           path: |
             build/src/ui/Release/*.exe
             build/src/email-watcher/Release/*.exe
+            build/src/core-cli/Release/*.exe
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -33,3 +34,4 @@ jobs:
           files: |
             build/src/ui/Release/*.exe
             build/src/email-watcher/Release/*.exe
+            build/src/core-cli/Release/*.exe

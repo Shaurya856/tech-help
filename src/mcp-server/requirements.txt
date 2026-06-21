@@ -1,0 +1,11 @@
+# MCP server runtime
+mcp
+
+# process_file tool
+# (no extra deps - shells out to core-cli.exe)
+
+# summarize_file tool
+pypdf
+pillow
+pytesseract
+requests

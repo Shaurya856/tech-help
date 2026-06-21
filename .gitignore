@@ -3,5 +3,9 @@ build/
 *.obj
 *.pdb
 install/config.json
+src/mcp-server/config.json
 *.local.json
 last_seen_state.json
+venv/
+__pycache__/
+*.pyc
