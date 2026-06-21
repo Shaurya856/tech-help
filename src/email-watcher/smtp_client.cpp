@@ -1,5 +1,6 @@
 #include "smtp_client.h"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
