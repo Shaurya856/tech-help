@@ -6,16 +6,22 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create vcpkg binary cache directory
+        run: New-Item -ItemType Directory -Force -Path "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+
       - name: Cache vcpkg binary cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.LOCALAPPDATA }}\vcpkg\archives
+          path: ${{ github.workspace }}\vcpkg-cache
           key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'vcpkg-triplets/x64-windows.cmake') }}
           restore-keys: |
             vcpkg-archives-${{ runner.os }}-
