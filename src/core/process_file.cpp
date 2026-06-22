@@ -31,7 +31,9 @@ std::string extension_of(const std::string& path) {
 }
 
 bool is_image(const std::string& ext) {
-    return ext == ".jpg" || ext == ".jpeg" || ext == ".png";
+    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+           ext == ".bmp" || ext == ".webp" || ext == ".tga" || ext == ".gif" ||
+           ext == ".tif" || ext == ".tiff" || ext == ".heic" || ext == ".heif";
 }
 
 std::vector<std::uint8_t> read_bytes(const std::string& path) {
@@ -44,7 +46,7 @@ void HPDF_STDCALL on_hpdf_error(HPDF_STATUS, HPDF_STATUS, void*) {
 }
 
 std::string convert_image_to_pdf(const std::string& input_path) {
-    RecompressedImage img = recompress_to_jpeg(read_bytes(input_path));
+    RecompressedImage img = recompress_to_jpeg(input_path);
 
     HPDF_Doc pdf = HPDF_New(on_hpdf_error, nullptr);
     if (!pdf) throw std::runtime_error("failed to initialize libharu document");
@@ -160,6 +162,58 @@ ProcessResult process_file(const std::string& input_path) {
     }
 
     return {ProcessStatus::Ok, pdf_path};
+}
+
+bool reorder_pdf(const std::string& input_pdf,
+                 const std::string& output_pdf,
+                 const std::vector<int>& page_order) {
+    try {
+        QPDF in;
+        in.processFile(input_pdf.c_str());
+        auto pages = QPDFPageDocumentHelper(in).getAllPages();
+
+        QPDF out;
+        out.emptyPDF();
+        QPDFPageDocumentHelper out_pages(out);
+
+        for (int pg : page_order) {
+            if (pg < 1 || pg > static_cast<int>(pages.size())) return false;
+            out_pages.addPage(pages[static_cast<size_t>(pg - 1)], false);
+        }
+
+        QPDFWriter writer(out, output_pdf.c_str());
+        writer.setObjectStreamMode(qpdf_o_generate);
+        writer.setCompressStreams(true);
+        writer.write();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool combine_pdfs(const std::vector<std::string>& input_paths,
+                  const std::string& output_path) {
+    try {
+        QPDF out;
+        out.emptyPDF();
+        QPDFPageDocumentHelper out_pages(out);
+
+        for (const auto& path : input_paths) {
+            QPDF in;
+            in.processFile(path.c_str());
+            for (auto& page : QPDFPageDocumentHelper(in).getAllPages()) {
+                out_pages.addPage(page, false);
+            }
+        }
+
+        QPDFWriter writer(out, output_path.c_str());
+        writer.setObjectStreamMode(qpdf_o_generate);
+        writer.setCompressStreams(true);
+        writer.write();
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 }  // namespace core

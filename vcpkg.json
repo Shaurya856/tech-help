@@ -6,6 +6,9 @@
     "qpdf",
     "nlohmann-json",
     "curl",
-    "stb"
+    "stb",
+    "tiff",
+    "libheif",
+    "sqlite3"
   ]
 }

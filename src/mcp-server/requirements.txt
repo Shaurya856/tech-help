@@ -2,10 +2,14 @@
 mcp
 
 # process_file tool
-# (no extra deps - shells out to core-cli.exe)
+# (no extra deps — shells out to core-cli.exe)
 
 # summarize_file tool
 pypdf
 pillow
+pillow-heif
 pytesseract
 requests
+
+# search_file_index tool
+rapidfuzz

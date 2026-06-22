@@ -8,16 +8,21 @@
     "app_password": "REPLACE_ME"
   },
   "granted_folders": [
-    "C:/Users/REPLACE_ME/Desktop",
-    "C:/Users/REPLACE_ME/Downloads",
-    "C:/Users/REPLACE_ME/Documents"
+    "C:\\Users\\REPLACE_ME\\Desktop",
+    "C:\\Users\\REPLACE_ME\\Downloads",
+    "C:\\Users\\REPLACE_ME\\Documents"
   ],
-  "output_folder": "C:/Users/REPLACE_ME/Documents/Processed",
-  "obsidian_vault_folder": "C:/Users/REPLACE_ME/Documents/Obsidian Vault",
-  "llm_provider": {
-    "name": "groq",
-    "api_key": "REPLACE_ME"
-  },
+  "output_folder": "C:\\Users\\REPLACE_ME\\Documents\\Processed",
+  "obsidian_vault_folder": "C:\\Users\\REPLACE_ME\\Documents\\Obsidian Vault",
   "language": "en",
-  "printer_name": "REPLACE_ME"
+  "printer_name": "REPLACE_ME",
+  "max_attachment_mb": 100,
+  "max_attachments": 30,
+  "python_exe": "",
+  "office_convert_script": "",
+  "llm_providers": {
+    "openrouter": { "api_key": "" },
+    "groq":       { "api_key": "REPLACE_ME" },
+    "nvidia_nim": { "api_key": "" }
+  }
 }

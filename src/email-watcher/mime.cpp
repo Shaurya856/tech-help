@@ -106,9 +106,21 @@ void parse_part(const std::string& part, ParsedMessage& out) {
     std::string disposition = header_value(headers, "Content-Disposition");
     std::string filename = header_param(disposition, "filename");
     if (filename.empty()) filename = header_param(content_type, "name");
-    if (filename.empty()) return;
 
     std::string encoding = to_lower(header_value(headers, "Content-Transfer-Encoding"));
+
+    // No filename → this is a body part.
+    if (filename.empty()) {
+        if (lower_ct.find("text/plain") == 0 && out.body_text.empty()) {
+            if (encoding.find("base64") != std::string::npos) {
+                auto decoded = base64_decode(body);
+                out.body_text.assign(decoded.begin(), decoded.end());
+            } else {
+                out.body_text = trim(body);
+            }
+        }
+        return;
+    }
 
     Attachment att;
     att.filename = filename;
@@ -184,7 +196,10 @@ ParsedMessage parse_message(const std::string& raw_message) {
     (void)body;
     auto headers = parse_headers(header_block);
     result.from_address = header_value(headers, "From");
-    result.subject = header_value(headers, "Subject");
+    result.subject      = header_value(headers, "Subject");
+    result.message_id   = header_value(headers, "Message-ID");
+    result.in_reply_to  = header_value(headers, "In-Reply-To");
+    result.references   = header_value(headers, "References");
 
     parse_part(raw_message, result);
     return result;
@@ -192,13 +207,23 @@ ParsedMessage parse_message(const std::string& raw_message) {
 
 std::string build_message(const std::string& from, const std::string& to,
                            const std::string& subject, const std::string& text_body,
-                           const std::vector<Attachment>& attachments) {
+                           const std::vector<Attachment>& attachments,
+                           const std::string& message_id,
+                           const std::string& in_reply_to) {
     const std::string boundary = "tech-help-boundary-7f3a9c";
     std::ostringstream out;
     out << "From: " << from << "\r\n"
         << "To: " << to << "\r\n"
         << "Subject: " << subject << "\r\n"
         << "MIME-Version: 1.0\r\n";
+
+    if (!message_id.empty()) {
+        out << "Message-ID: " << message_id << "\r\n";
+    }
+    if (!in_reply_to.empty()) {
+        out << "In-Reply-To: " << in_reply_to << "\r\n"
+            << "References: " << in_reply_to << "\r\n";
+    }
 
     if (attachments.empty()) {
         out << "Content-Type: text/plain; charset=utf-8\r\n\r\n" << text_body << "\r\n";
