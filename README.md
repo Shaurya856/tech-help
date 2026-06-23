@@ -141,14 +141,113 @@ git-ignored and must be transferred to the target machine separately —
 `python_exe`/`office_convert_script` paths after creating the Office venv,
 and copies it into place for both the compiled binaries and the MCP server.
 
-## Install
+## Install (step by step, on the target Windows laptop)
 
-On the target Windows machine, after downloading the built binaries:
+This repo cannot be built or run on macOS/Linux. You need two separate
+downloads from GitHub — the **build artifact** (the exes) and the **source
+zip** (everything else) — plus a few prerequisites already on the machine.
 
+### 0. Prerequisites
+
+- **Python 3.12** (not 3.14 — some dependencies like `pywin32` and
+  `pillow-heif` may not have prebuilt wheels for very new Python versions
+  yet). Get it from python.org, and check **"Add python.exe to PATH"**
+  during install. Verify with `python --version`.
+- **Microsoft Word + Excel** installed — required for DOCX/XLSX conversion
+  (COM automation, no substitute).
+- A configured **printer** — note its exact Windows printer name.
+- **Claude Desktop** installed, if you're using the MCP/Cowork integration.
+
+### 1. Get the build artifact
+
+If this repo has a GitHub remote with a passing Actions run: go to the
+repo's **Actions** tab → latest successful run → download the
+`tech-help-windows` artifact and extract it. You should have exactly:
+`ui.exe`, `email-watcher.exe`, `core-cli.exe`.
+
+(If there's no CI run available, you'd need a full Visual Studio + vcpkg
+toolchain to build locally — see the **Build** section above. Not needed if
+you already have CI artifacts.)
+
+### 2. Get the source
+
+On the repo's GitHub page: **Code** (green button) → **Download ZIP** →
+extract it. This gives you `lang/`, `assets/docx-guide/`, `src/mcp-server/`,
+`src/office/`, `install/install.ps1`, and `install/config.example.json`.
+
+### 3. Assemble the `dist` folder
+
+`install.ps1` expects one folder containing everything together. From
+PowerShell, `cd` into the extracted source folder, then (adjust `$exeDir`
+to wherever you extracted the build artifact):
+
+```powershell
+$exeDir = "C:\path\to\extracted\tech-help-windows"
+
+New-Item -ItemType Directory -Force -Path dist | Out-Null
+Copy-Item "$exeDir\ui.exe","$exeDir\email-watcher.exe","$exeDir\core-cli.exe" -Destination dist
+Copy-Item lang -Destination dist\lang -Recurse
+New-Item -ItemType Directory -Force -Path dist\assets | Out-Null
+Copy-Item assets\docx-guide -Destination dist\assets\docx-guide -Recurse
+Copy-Item src\mcp-server -Destination dist\mcp-server -Recurse
+Copy-Item src\office -Destination dist\office -Recurse
 ```
-.\install.ps1 -SourceDir .\dist -ConfigPath .\config.json
+
+Verify: `dir dist` should show `ui.exe`, `email-watcher.exe`, `core-cli.exe`,
+`lang`, `assets`, `mcp-server`, `office`.
+
+### 4. Create config.json
+
+```powershell
+Copy-Item install\config.example.json config.json
+notepad config.json
 ```
 
-See the script's output for the remaining manual steps (Cowork folder
-permissions, model setting, Skill upload, daily schedule, and the ACL
-recovery command if you need to write to a source folder yourself).
+Fill in real values: Gmail address + **App Password** (generate one at
+myaccount.google.com/apppasswords — not your normal password),
+`granted_folders` (real Desktop/Downloads/Documents paths on this machine),
+`output_folder`, `obsidian_vault_folder`, `printer_name` (exact Windows
+printer name), and at least one API key under `llm_providers`
+(OpenRouter/Groq/NIM).
+
+### 5. Run the installer
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install\install.ps1 -SourceDir .\dist -ConfigPath .\config.json
+```
+
+This copies everything to `%LOCALAPPDATA%\TechHelp`, creates the MCP-server
+and Office-COM Python venvs, patches `config.json` with resolved Python
+paths, registers the 30-minute Task Scheduler job, registers the MCP server
+with Claude Desktop, and applies the read/write ACLs for Hermes Agent.
+
+### 6. Manual steps (also printed at the end of install.ps1)
+
+- In Claude Desktop → Settings → Cowork, grant access to Desktop/Downloads/
+  Documents only.
+- Set the Cowork model to Haiku, extended thinking off.
+- Upload `skills/conversion-skill/SKILL.md` and
+  `skills/daily-index-skill/SKILL.md` via Customize → Skills.
+- Schedule the daily index pass at 9:00 AM via Cowork's `/schedule`.
+- Restart Claude Desktop.
+- If you ever need to write to a source folder yourself from Explorer and
+  can't (because of the ACL applied in step 5), run:
+  `icacls <folder> /remove:d %USERNAME% /T`
+
+### 7. Hermes Agent (separate install)
+
+The daily index relies on **Hermes Agent** (Nous Research) — not bundled
+in this repo, install it independently. The CLI invocation in
+`skills/daily-index-skill/SKILL.md` (`hermes run --scan-paths ...`) is an
+assumed shape and may need adjusting once you have the real CLI in front
+of you.
+
+### Obsidian (optional, browsing only)
+
+The daily index writes plain Markdown files (with frontmatter and
+`[[wikilinks]]`) to `obsidian_vault_folder` — that's just a folder path,
+nothing Obsidian-specific about the write step, and `search_file_index`
+reads those files directly without needing Obsidian running. Install
+Obsidian only if you want to *browse* the notes visually; the system works
+identically without it.
