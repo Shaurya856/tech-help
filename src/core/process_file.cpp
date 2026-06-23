@@ -16,6 +16,16 @@
 
 namespace core {
 
+bool is_image_ext(const std::string& ext) {
+    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+           ext == ".bmp" || ext == ".webp" || ext == ".tga" || ext == ".gif" ||
+           ext == ".tif" || ext == ".tiff" || ext == ".heic" || ext == ".heif";
+}
+
+bool is_office_ext(const std::string& ext) {
+    return ext == ".docx" || ext == ".doc" || ext == ".xlsx" || ext == ".xls";
+}
+
 namespace {
 
 namespace fs = std::filesystem;
@@ -28,12 +38,6 @@ std::string to_lower(std::string s) {
 
 std::string extension_of(const std::string& path) {
     return to_lower(fs::path(path).extension().string());
-}
-
-bool is_image(const std::string& ext) {
-    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
-           ext == ".bmp" || ext == ".webp" || ext == ".tga" || ext == ".gif" ||
-           ext == ".tif" || ext == ".tiff" || ext == ".heic" || ext == ".heif";
 }
 
 std::vector<std::uint8_t> read_bytes(const std::string& path) {
@@ -140,13 +144,9 @@ void optimize_pdf_in_place(const std::string& path) {
 ProcessResult process_file(const std::string& input_path) {
     const std::string ext = extension_of(input_path);
 
-    if (ext == ".docx") {
-        return {ProcessStatus::UnsupportedType, ""};
-    }
-
     std::string pdf_path;
     try {
-        if (is_image(ext)) {
+        if (is_image_ext(ext)) {
             // Images: recompress before embedding — no need to run
             // optimize_pdf_in_place since the image is already at target
             // quality and the libharu output structure is compact.

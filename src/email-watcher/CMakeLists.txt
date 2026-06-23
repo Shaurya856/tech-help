@@ -8,7 +8,6 @@ add_executable(email-watcher
     imap_client.cpp
     smtp_client.cpp
     print_job.cpp
-    office_convert.cpp
     log.cpp
 )
 target_link_libraries(email-watcher PRIVATE core CURL::libcurl Winspool.lib unofficial::sqlite3::sqlite3)

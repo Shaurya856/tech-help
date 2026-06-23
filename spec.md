@@ -141,9 +141,14 @@ stb_image decodes JPEG/PNG/TIFF/BMP into raw pixel data for libharu.
 - `doc.ExportAsFixedFormat(output_path, ExportFormat=17)` — native PDF
   export, no print-driver intermediary, no dialogs.
 - **Hang protection**: 60-second timeout. If Word doesn't return, process
-  force-killed, failure reply sent — watcher never blocked indefinitely.
+  force-killed — caller falls back to the manual Print-to-PDF guide rather
+  than blocking indefinitely.
 - Serialized by design (§1 sequential processing) — no concurrent COM
   instances.
+- **Uniform across all three entry points**: email watcher, Desktop UI,
+  and MCP `process_file` all call the same `core::office_convert` /
+  `convert.py` subprocess path with the same timeout and same fallback
+  behavior — none of the three has special-cased DOCX/XLSX handling.
 
 ### XLSX → PDF
 - Same pattern: `win32com.client.Dispatch("Excel.Application")`,

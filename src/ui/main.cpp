@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "config.h"
+#include "office_convert.h"
 #include "process_file.h"
 #include "strings.h"
 
@@ -161,10 +162,21 @@ void show_reorder() {
 }
 
 // ── Multi-file processing ──────────────────────────────────────────────────
-bool is_image_ext(const std::string& ext) {
-    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
-           ext == ".bmp" || ext == ".webp" || ext == ".tga" || ext == ".gif" ||
-           ext == ".tif" || ext == ".tiff" || ext == ".heic" || ext == ".heif";
+// Converts a DOCX/XLSX to PDF via Word/Excel COM automation (same mechanism
+// as the email watcher) and compresses the result. Returns the final PDF
+// path, or empty string if Office automation isn't configured or fails —
+// callers should fall back to the manual Print-to-PDF guide in that case.
+std::string convert_office_to_pdf(const std::string& input_path) {
+    const std::string tmp = get_tmp_dir();
+    const std::string office_out =
+        (fs::path(tmp) / (fs::path(input_path).stem().string() + "_converted.pdf")).string();
+
+    core::OfficeConvertResult result = core::office_convert(
+        g_config->python_exe, g_config->office_convert_script, input_path, office_out);
+    if (!result.success) return "";
+
+    core::ProcessResult compressed = core::process_file(office_out);
+    return compressed.status == core::ProcessStatus::Ok ? compressed.output_path : office_out;
 }
 
 // Processes each file to a temp PDF, then combines them into one.
@@ -175,7 +187,7 @@ std::string combine_selected_files() {
 
     for (const auto& input : g_pendingFiles) {
         const std::string ext = extension_of(input);
-        if (!is_image_ext(ext) && ext != ".pdf") continue;
+        if (!core::is_image_ext(ext) && ext != ".pdf" && !core::is_office_ext(ext)) continue;
 
         // Copy input to tmp so we don't modify the original and the
         // output goes to a predictable temp location.
@@ -183,6 +195,12 @@ std::string combine_selected_files() {
         std::error_code ec;
         fs::copy_file(input, tmp_input, fs::copy_options::overwrite_existing, ec);
         if (ec) continue;
+
+        if (core::is_office_ext(ext)) {
+            std::string converted = convert_office_to_pdf(tmp_input.string());
+            if (!converted.empty()) temp_pdfs.push_back(converted);
+            continue;
+        }
 
         core::ProcessResult result = core::process_file(tmp_input.string());
         if (result.status == core::ProcessStatus::Ok) {
@@ -213,15 +231,28 @@ std::string combine_selected_files() {
 void handle_single_file(const std::string& input_path) {
     const std::string ext = extension_of(input_path);
 
-    if (ext == ".docx") {
-        show_docx_guide();
-        return;
-    }
-
     SetWindowTextW(g_statusText,
                     to_wide(g_strings->get("ui.processing")).c_str());
     ShowWindow(g_statusText, SW_SHOW);
     UpdateWindow(g_hwnd);
+
+    if (core::is_office_ext(ext)) {
+        std::string converted = convert_office_to_pdf(input_path);
+        if (converted.empty()) {
+            // Office automation not configured/failed — fall back to the
+            // manual Print-to-PDF walkthrough rather than blocking him.
+            show_docx_guide();
+            return;
+        }
+        g_lastOutputPath   = move_to_output_folder(converted);
+        g_lastOutputFolder = fs::path(g_lastOutputPath).parent_path().string();
+
+        std::wstring msg = to_wide(g_strings->get("ui.result_success")) + L"\n" +
+                            to_wide(g_lastOutputPath);
+        SetWindowTextW(g_statusText, msg.c_str());
+        show_result(true);
+        return;
+    }
 
     core::ProcessResult result = core::process_file(input_path);
 
@@ -298,7 +329,7 @@ void open_file_picker(HWND owner) {
     ofn.nMaxFile    = kBufSize;
     ofn.lpstrFilter =
         L"Supported files\0"
-        L"*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tga;*.gif;*.tif;*.tiff;*.heic;*.heif;*.pdf;*.docx\0"
+        L"*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tga;*.gif;*.tif;*.tiff;*.heic;*.heif;*.pdf;*.docx;*.xlsx\0"
         L"All files\0*.*\0";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
                 OFN_ALLOWMULTISELECT | OFN_EXPLORER;

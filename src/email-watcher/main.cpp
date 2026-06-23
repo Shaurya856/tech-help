@@ -173,10 +173,175 @@ std::string move_to_output_folder(const std::string& path,
 
 // ── Image extension check (mirrors process_file.cpp) ──────────────────────
 
-bool is_image_ext(const std::string& ext) {
-    return ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
-           ext == ".bmp" || ext == ".webp" || ext == ".tga" || ext == ".gif" ||
-           ext == ".tif" || ext == ".tiff" || ext == ".heic" || ext == ".heif";
+// ── New-message processing ─────────────────────────────────────────────────
+//
+// Multiple attachments in one email are combined into a single ordered PDF —
+// the same behavior as picking multiple files in the desktop UI. A single
+// attachment keeps its specific failure replies (e.g. the DOCX manual guide);
+// with multiple attachments, a file that fails to convert is silently
+// dropped from the combine (matching the UI's combine_selected_files), and
+// the email only fails outright if nothing could be converted at all.
+void process_new_message(watcher::WatcherDB& db,
+                          const watcher::SmtpConfig& smtp,
+                          core::Strings& strings,
+                          core::Config& config,
+                          const mime::ParsedMessage& parsed,
+                          const std::string& tmp_dir,
+                          const std::string& pending_dir,
+                          const std::string& guide_dir,
+                          std::int64_t now) {
+    const bool wants_print = subject_requests_print(parsed.subject);
+    const bool single_attachment = parsed.attachments.size() == 1;
+
+    auto finish_with_pdf = [&](const std::string& pdf_path,
+                                const std::vector<std::uint8_t>* preview_source_image) {
+        if (wants_print) {
+            const std::string pending_pdf =
+                (fs::path(pending_dir) / fs::path(pdf_path).filename()).string();
+            fs::copy_file(pdf_path, pending_pdf, fs::copy_options::overwrite_existing);
+            fs::remove(pdf_path);
+
+            mime::Attachment preview;
+            if (preview_source_image) {
+                try {
+                    core::RecompressedImage thumb = core::recompress_to_jpeg(
+                        *preview_source_image, /*max_dimension=*/800, /*quality=*/75);
+                    preview.filename = fs::path(pending_pdf).stem().string() + "_preview.jpg";
+                    preview.content_type = "image/jpeg";
+                    preview.data = thumb.jpeg_data;
+                } catch (...) {
+                    preview.filename = fs::path(pending_pdf).filename().string();
+                    preview.content_type = "application/pdf";
+                    preview.data = read_file(pending_pdf);
+                }
+            } else {
+                preview.filename = fs::path(pending_pdf).filename().string();
+                preview.content_type = "application/pdf";
+                preview.data = read_file(pending_pdf);
+            }
+
+            const std::string confirm_msg_id = generate_message_id();
+            const std::string confirm_subject = strings.get("email.reply_print_confirm_subject");
+
+            do_reply(smtp, config.gmail.address, parsed.from_address,
+                     confirm_subject, strings.get("email.reply_print_confirm_body"),
+                     {preview}, confirm_msg_id, parsed.message_id);
+
+            watcher::PendingPrintJob job;
+            job.job_id             = generate_id("job-");
+            job.confirm_message_id = confirm_msg_id;
+            job.from_address       = parsed.from_address;
+            job.confirm_subject    = confirm_subject;
+            job.pdf_path           = pending_pdf;
+            job.created_at         = now;
+            db.save_print_job(job);
+        } else {
+            const std::string saved = move_to_output_folder(pdf_path, config.output_folder);
+            mime::Attachment reply_att;
+            reply_att.filename     = fs::path(saved).filename().string();
+            reply_att.content_type = "application/pdf";
+            reply_att.data         = read_file(saved);
+            do_reply(smtp, config.gmail.address, parsed.from_address,
+                     strings.get("email.reply_success_subject"),
+                     strings.get("email.reply_success_body"), {reply_att});
+        }
+    };
+
+    std::vector<std::string> temp_pdfs;
+
+    for (const auto& attachment : parsed.attachments) {
+        const std::string ext = extension_of(attachment.filename);
+        const std::string tmp_in = (fs::path(tmp_dir) / attachment.filename).string();
+        write_file(tmp_in, attachment.data);
+
+        if (core::is_office_ext(ext)) {
+            if (config.python_exe.empty()) {
+                if (single_attachment) {
+                    do_reply(smtp, config.gmail.address, parsed.from_address,
+                             strings.get("email.reply_docx_subject"),
+                             strings.get("email.reply_docx_body"),
+                             load_docx_guide_images(guide_dir));
+                    return;
+                }
+                continue;  // multi-attachment: drop this one from the combine
+            }
+
+            const std::string office_out = (fs::path(tmp_dir) /
+                (fs::path(attachment.filename).stem().string() + "_" + generate_id("office") + ".pdf")).string();
+            core::OfficeConvertResult office_result = core::office_convert(
+                config.python_exe, config.office_convert_script, tmp_in, office_out);
+
+            if (!office_result.success) {
+                watcher::log_error("office_convert failed: " + office_result.error_message);
+                if (single_attachment) {
+                    do_reply(smtp, config.gmail.address, parsed.from_address,
+                             strings.get("email.reply_error_subject"),
+                             strings.get("email.reply_error_body"));
+                    return;
+                }
+                continue;
+            }
+
+            core::ProcessResult compress_result = core::process_file(office_out);
+            temp_pdfs.push_back(compress_result.status == core::ProcessStatus::Ok
+                                     ? compress_result.output_path : office_out);
+            continue;
+        }
+
+        core::ProcessResult result = core::process_file(tmp_in);
+        if (result.status == core::ProcessStatus::Ok) {
+            temp_pdfs.push_back(result.output_path);
+        } else if (single_attachment) {
+            if (result.status == core::ProcessStatus::UnsupportedType) {
+                do_reply(smtp, config.gmail.address, parsed.from_address,
+                         strings.get("email.reply_unsupported_subject"),
+                         strings.get("email.reply_unsupported_body"));
+            } else {
+                do_reply(smtp, config.gmail.address, parsed.from_address,
+                         strings.get("email.reply_error_subject"),
+                         strings.get("email.reply_error_body"));
+            }
+            return;
+        }
+        // multi-attachment + failed: silently dropped from the combine.
+    }
+
+    if (temp_pdfs.empty()) {
+        do_reply(smtp, config.gmail.address, parsed.from_address,
+                 strings.get("email.reply_error_subject"),
+                 strings.get("email.reply_error_body"));
+        return;
+    }
+
+    const std::string out_stem = make_output_stem(parsed.subject, parsed.attachments[0].filename);
+    std::string final_pdf;
+
+    if (temp_pdfs.size() == 1) {
+        final_pdf = temp_pdfs[0];
+        const std::string renamed = (fs::path(tmp_dir) / (out_stem + ".pdf")).string();
+        std::error_code ec;
+        fs::rename(final_pdf, renamed, ec);
+        if (!ec) final_pdf = renamed;
+    } else {
+        final_pdf = (fs::path(tmp_dir) / (out_stem + ".pdf")).string();
+        if (!core::combine_pdfs(temp_pdfs, final_pdf)) {
+            do_reply(smtp, config.gmail.address, parsed.from_address,
+                     strings.get("email.reply_error_subject"),
+                     strings.get("email.reply_error_body"));
+            return;
+        }
+        for (const auto& p : temp_pdfs) {
+            std::error_code ec;
+            fs::remove(p, ec);
+        }
+    }
+
+    const std::vector<std::uint8_t>* preview_ptr = nullptr;
+    if (single_attachment && core::is_image_ext(extension_of(parsed.attachments[0].filename))) {
+        preview_ptr = &parsed.attachments[0].data;
+    }
+
+    finish_with_pdf(final_pdf, preview_ptr);
 }
 
 }  // namespace
@@ -336,183 +501,10 @@ int main() {
                 continue;
             }
 
-            const bool wants_print = subject_requests_print(parsed.subject);
-
-            for (const auto& attachment : parsed.attachments) {
-                const std::string ext = extension_of(attachment.filename);
-                const std::string out_stem = make_output_stem(parsed.subject, attachment.filename);
-                const std::string tmp_in = (fs::path(tmp_dir) / attachment.filename).string();
-
-                write_file(tmp_in, attachment.data);
-
-                // DOCX/XLSX: COM automation via convert.py subprocess (60s timeout).
-                // Falls back to the manual-step guide reply if Python is not configured.
-                if (ext == ".docx" || ext == ".doc" ||
-                    ext == ".xlsx" || ext == ".xls") {
-                    if (config.python_exe.empty()) {
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 strings.get("email.reply_docx_subject"),
-                                 strings.get("email.reply_docx_body"),
-                                 load_docx_guide_images(guide_dir));
-                        continue;
-                    }
-
-                    const std::string office_out =
-                        (fs::path(tmp_dir) / (out_stem + ".pdf")).string();
-                    watcher::OfficeConvertResult office_result =
-                        watcher::office_convert(config.python_exe,
-                                                config.office_convert_script,
-                                                tmp_in, office_out);
-
-                    if (!office_result.success) {
-                        watcher::log_error("office_convert failed: " + office_result.error_message);
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 strings.get("email.reply_error_subject"),
-                                 strings.get("email.reply_error_body"));
-                        continue;
-                    }
-
-                    // Run PDF compression on the office-produced PDF.
-                    core::ProcessResult compress_result = core::process_file(office_out);
-                    const std::string pdf_path =
-                        (compress_result.status == core::ProcessStatus::Ok)
-                            ? compress_result.output_path
-                            : office_out;
-
-                    if (wants_print) {
-                        const std::string pending_pdf =
-                            (fs::path(pending_dir) / fs::path(pdf_path).filename()).string();
-                        fs::copy_file(pdf_path, pending_pdf,
-                                      fs::copy_options::overwrite_existing);
-                        fs::remove(pdf_path);
-
-                        mime::Attachment preview;
-                        preview.filename = fs::path(pending_pdf).filename().string();
-                        preview.content_type = "application/pdf";
-                        preview.data = read_file(pending_pdf);
-
-                        const std::string confirm_msg_id = generate_message_id();
-                        const std::string confirm_subject =
-                            strings.get("email.reply_print_confirm_subject");
-
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 confirm_subject,
-                                 strings.get("email.reply_print_confirm_body"),
-                                 {preview}, confirm_msg_id, parsed.message_id);
-
-                        watcher::PendingPrintJob job;
-                        job.job_id             = generate_id("job-");
-                        job.confirm_message_id = confirm_msg_id;
-                        job.from_address       = parsed.from_address;
-                        job.confirm_subject    = confirm_subject;
-                        job.pdf_path           = pending_pdf;
-                        job.created_at         = now;
-                        db.save_print_job(job);
-                    } else {
-                        const std::string saved =
-                            move_to_output_folder(pdf_path, config.output_folder);
-
-                        mime::Attachment reply_att;
-                        reply_att.filename = fs::path(saved).filename().string();
-                        reply_att.content_type = "application/pdf";
-                        reply_att.data = read_file(saved);
-
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 strings.get("email.reply_success_subject"),
-                                 strings.get("email.reply_success_body"),
-                                 {reply_att});
-                    }
-                    continue;
-                }
-
-                core::ProcessResult result = core::process_file(tmp_in);
-
-                if (result.status == core::ProcessStatus::Ok) {
-                    // Rename to requested output stem.
-                    const std::string final_tmp = (fs::path(tmp_dir) / (out_stem + ".pdf")).string();
-                    std::error_code ec;
-                    fs::rename(result.output_path, final_tmp, ec);
-                    const std::string pdf_path = ec ? result.output_path : final_tmp;
-
-                    if (wants_print) {
-                        // Confirmation flow: store PDF in pending/, send preview + YES prompt.
-                        const std::string pending_pdf =
-                            (fs::path(pending_dir) / fs::path(pdf_path).filename()).string();
-                        fs::copy_file(pdf_path, pending_pdf,
-                                      fs::copy_options::overwrite_existing);
-                        fs::remove(pdf_path);
-
-                        // Build preview attachment.
-                        // For image inputs: re-encode to JPEG for a compact preview.
-                        // For PDF inputs: attach the PDF itself.
-                        mime::Attachment preview;
-                        if (is_image_ext(ext)) {
-                            try {
-                                core::RecompressedImage thumb = core::recompress_to_jpeg(
-                                    attachment.data,
-                                    /*max_dimension=*/800,
-                                    /*quality=*/75);
-                                preview.filename = out_stem + "_preview.jpg";
-                                preview.content_type = "image/jpeg";
-                                preview.data = thumb.jpeg_data;
-                            } catch (...) {
-                                // Fall back to attaching the PDF.
-                                preview.filename = out_stem + ".pdf";
-                                preview.content_type = "application/pdf";
-                                preview.data = read_file(pending_pdf);
-                            }
-                        } else {
-                            preview.filename = out_stem + ".pdf";
-                            preview.content_type = "application/pdf";
-                            preview.data = read_file(pending_pdf);
-                        }
-
-                        const std::string confirm_msg_id = generate_message_id();
-                        const std::string confirm_subject =
-                            strings.get("email.reply_print_confirm_subject");
-
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 confirm_subject,
-                                 strings.get("email.reply_print_confirm_body"),
-                                 {preview},
-                                 confirm_msg_id,
-                                 parsed.message_id);
-
-                        watcher::PendingPrintJob job;
-                        job.job_id             = generate_id("job-");
-                        job.confirm_message_id = confirm_msg_id;
-                        job.from_address       = parsed.from_address;
-                        job.confirm_subject    = confirm_subject;
-                        job.pdf_path           = pending_pdf;
-                        job.created_at         = now;
-                        db.save_print_job(job);
-
-                    } else {
-                        // Normal flow: move to output folder and reply with PDF.
-                        const std::string saved = move_to_output_folder(
-                            pdf_path, config.output_folder);
-
-                        mime::Attachment reply_att;
-                        reply_att.filename = fs::path(saved).filename().string();
-                        reply_att.content_type = "application/pdf";
-                        reply_att.data = read_file(saved);
-
-                        do_reply(smtp, config.gmail.address, parsed.from_address,
-                                 strings.get("email.reply_success_subject"),
-                                 strings.get("email.reply_success_body"),
-                                 {reply_att});
-                    }
-
-                } else if (result.status == core::ProcessStatus::UnsupportedType) {
-                    do_reply(smtp, config.gmail.address, parsed.from_address,
-                             strings.get("email.reply_unsupported_subject"),
-                             strings.get("email.reply_unsupported_body"));
-                } else {
-                    do_reply(smtp, config.gmail.address, parsed.from_address,
-                             strings.get("email.reply_error_subject"),
-                             strings.get("email.reply_error_body"));
-                }
-            }
+            // Multiple attachments are combined into one ordered PDF — the
+            // same behavior as picking multiple files in the desktop UI.
+            process_new_message(db, smtp, strings, config, parsed,
+                                 tmp_dir, pending_dir, guide_dir, now);
 
             if (!parsed.message_id.empty()) {
                 db.mark_message_processed(parsed.message_id);

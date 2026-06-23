@@ -1,11 +1,12 @@
 import os
 import re
 import subprocess
+import tempfile
 
 from mcp.server.fastmcp import FastMCP
 
 from config import load_config
-from process_runner import process_file_via_cli
+from process_runner import convert_office_to_pdf, process_file_via_cli
 from summarizer import extract_text, summarize
 
 mcp = FastMCP("tech-help")
@@ -63,12 +64,27 @@ def _read_index_notes() -> list[dict]:
 
 # ── Tools ──────────────────────────────────────────────────────────────────
 
+_OFFICE_EXTS = (".docx", ".doc", ".xlsx", ".xls")
+
+
 @mcp.tool()
 def process_file(path: str) -> dict:
-    """Convert an image to PDF, or compress a PDF, in place.
+    """Convert an image, DOCX, or XLSX to PDF, or compress a PDF, in place.
     Returns {status, output_path}. status is 'ok', 'unsupported', or 'error'.
+    'unsupported' for a DOCX/XLSX means Office automation isn't available on
+    this machine — fall back to the manual Print-to-PDF guide in that case.
     Always use this instead of computer-use for conversion or compression."""
-    return process_file_via_cli(_CORE_CLI_PATH, path)
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _OFFICE_EXTS:
+        return process_file_via_cli(_CORE_CLI_PATH, path)
+
+    python_exe = _config.get("python_exe", "")
+    convert_script = _config.get("office_convert_script", "")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        office_out = os.path.join(tmp_dir, os.path.splitext(os.path.basename(path))[0] + ".pdf")
+        if not convert_office_to_pdf(python_exe, convert_script, path, office_out):
+            return {"status": "unsupported"}
+        return process_file_via_cli(_CORE_CLI_PATH, office_out)
 
 
 @mcp.tool()

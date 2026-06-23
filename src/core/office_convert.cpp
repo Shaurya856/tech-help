@@ -4,12 +4,14 @@
 #include <string>
 
 // Windows-specific: CreateProcess + WaitForSingleObject for the 60-second
-// hang timeout, TerminateProcess on expiry.
+// hang timeout, TerminateProcess on expiry. Only compiled on Windows (see
+// CMakeLists.txt) since core is also built for local macOS process_file
+// testing, which doesn't need this file.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 
-namespace watcher {
+namespace core {
 
 namespace {
 
@@ -96,4 +98,4 @@ OfficeConvertResult office_convert(const std::string& python_exe,
     return {true, {}};
 }
 
-}  // namespace watcher
+}  // namespace core

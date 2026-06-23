@@ -6,6 +6,12 @@
 
 namespace core {
 
+// Single source of truth for which extensions route where — shared by the
+// email watcher, the desktop UI, and the MCP server (via core-cli) so the
+// three entry points can't drift out of sync on what's "supported."
+bool is_image_ext(const std::string& ext);
+bool is_office_ext(const std::string& ext);
+
 enum class ProcessStatus {
     Ok,
     UnsupportedType,

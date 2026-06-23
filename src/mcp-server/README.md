@@ -1,9 +1,11 @@
 # mcp-server
 
-Local MCP server exposing two tools to Claude Desktop / Cowork:
+Local MCP server exposing four tools to Claude Desktop / Cowork:
 
-- `process_file(path)` — calls the compiled `core-cli` binary (built from `/src/core`), which runs the same image→PDF/compression logic used by the desktop UI and email watcher. No conversion logic is reimplemented here.
-- `summarize_file(path)` — extracts text (PDF via `pypdf`, images via OCR) and sends it to a free-tier external LLM (Groq or NVIDIA NIM, configured in `config.json`) for a short summary. This is the only component that makes an external LLM call outside of Claude itself.
+- `process_file(path)` — calls the compiled `core-cli` binary (built from `/src/core`), which runs the same image→PDF/compression logic used by the desktop UI and email watcher. No conversion logic is reimplemented here. Does not handle DOCX/XLSX — those convert only via the email watcher's COM subprocess path (see `/src/office`); `process_file` reports them as unsupported.
+- `summarize_file(path)` — extracts text (PDF via `pypdf`, images via OCR) and sends it to a free-tier external LLM via a provider chain (OpenRouter → Groq → NVIDIA NIM, configured in `config.json`'s `llm_providers`, falling through on 429/5xx/timeout) for a short summary. For ad-hoc single-file requests outside the daily index — Hermes Agent (see `daily-index-skill`) does its own summarization for the indexing pass and does not call this tool.
+- `search_file_index(query)` — fuzzy-matches (`rapidfuzz`, `WRatio`) against the Markdown notes Hermes Agent writes to `obsidian_vault_folder`, returning a ranked `{path, summary, score}` list. Never loads the full index into context.
+- `set_page_order(file_path, page_order)` — reorders pages in a PDF in place via `core-cli reorder`, given a 1-based page order list.
 
 ## Setup
 

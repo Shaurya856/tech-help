@@ -13,6 +13,13 @@ add_library(core STATIC
     strings.cpp
 )
 
+# office_convert.cpp uses Win32 CreateProcess directly — only compiled on
+# Windows, so `core` (process_file/image_compress) still builds on macOS for
+# local development/testing.
+if(WIN32)
+    target_sources(core PRIVATE office_convert.cpp)
+endif()
+
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(core PRIVATE ${STB_INCLUDE_DIR})
 if(TARGET unofficial::libharu::hpdf)
